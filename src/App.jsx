@@ -62,7 +62,7 @@ export default function App() {
       const s = stateRef.current;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      s.tool.engaged = s.tool.auto || pointerRef.current || keysRef.current.has(' ');
+      s.tool.engaged = s.tool.auto || pointerRef.current.down || btnRef.current || keysRef.current.has(' ');
       step(s, dt, keysRef.current);
 
       const snd = soundRef.current;
@@ -108,22 +108,46 @@ export default function App() {
     const r = canvasRef.current.getBoundingClientRect();
     return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
   };
-  const onMove = (e) => {
+  const moveTool = (e) => {
     const s = stateRef.current;
+    const p = pointerRef.current;
+    if (e.pointerType === 'touch' && p.id !== null && p.id !== e.pointerId) return;
     const { x, y } = toWorld(e);
+    // on touch, aim above the finger so the tool tip stays visible
+    const yOff = e.pointerType === 'touch' ? 110 : 0;
     s.tool.x = clamp(x, X0 + 8, X1 - 8);
-    s.tool.r = clamp(AXIS_Y - y, 0, 132);
+    s.tool.r = clamp(AXIS_Y - (y - yOff), 0, 132);
+    s.touchPos = e.pointerType === 'touch' ? { x, y } : null;
     if (s.tool.auto) {
       s.tool.auto = false;
       setUi((u) => ({ ...u, auto: false }));
     }
   };
   const onDown = (e) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    pointerRef.current = true;
-    onMove(e);
+    const p = pointerRef.current;
+    if (e.pointerType === 'touch') {
+      if (p.id !== null) return; // ignore extra fingers on the canvas
+      p.id = e.pointerId;
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+    p.down = true;
+    moveTool(e);
   };
-  const onUp = () => { pointerRef.current = false; };
+  const onMove = (e) => moveTool(e);
+  const onUp = (e) => {
+    const p = pointerRef.current;
+    if (e.pointerType === 'touch' && p.id === e.pointerId) {
+      p.id = null;
+      stateRef.current.touchPos = null;
+    }
+    p.down = false;
+  };
+  const cutDown = (e) => {
+    e.preventDefault();
+    if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId);
+    btnRef.current = true;
+  };
+  const cutUp = () => { btnRef.current = false; };
 
   // ---------- actions ----------
   const selectShape = (id) => {
@@ -212,6 +236,7 @@ export default function App() {
 
       <div className="layout">
         <div className="stage">
+          <div className="canvas-wrap">
           <div className="target-chip">
             {ui.shape === 'free'
               ? '✋ Freeform — shape it your way'
@@ -225,7 +250,6 @@ export default function App() {
             onPointerMove={onMove}
             onPointerUp={onUp}
             onPointerCancel={onUp}
-            onPointerLeave={() => { if (!pointerRef.current) onUp(); }}
             onContextMenu={(e) => e.preventDefault()}
           />
 
@@ -258,11 +282,29 @@ export default function App() {
             </div>
           )}
 
+          {coarse && !ui.polished && (
+            <button
+              className="cut-btn"
+              onPointerDown={cutDown}
+              onPointerUp={cutUp}
+              onPointerCancel={cutUp}
+              onPointerLeave={cutUp}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              ✂<span>CUT</span>
+            </button>
+          )}
+          </div>
+
           <div className="legend">
             <span><i className="dot need" /> more to cut</span>
             <span><i className="dot on" /> on target</span>
             <span><i className="dot over" /> overcut — wood gone</span>
-            <span className="keys">🖱 drag to cut · ← → feed · ↑ ↓ lift · SPACE press</span>
+            {coarse ? (
+              <span className="keys">👆 drag on the wood to carve · hold CUT to press</span>
+            ) : (
+              <span className="keys">🖱 drag to cut · ← → feed · ↑ ↓ lift · SPACE press</span>
+            )}
           </div>
         </div>
 

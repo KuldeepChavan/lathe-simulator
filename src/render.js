@@ -271,6 +271,22 @@ export function draw(ctx, s) {
   // ---------- cutting tool ----------
   drawTool(ctx, s);
 
+  // ---------- touch aim indicator (finger -> tool tip) ----------
+  if (s.touchPos) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.32)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(s.touchPos.x, s.touchPos.y, 13, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(s.touchPos.x, s.touchPos.y);
+    ctx.lineTo(s.tool.x, AXIS_Y - s.tool.r);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // ---------- particles ----------
   for (const pt of s.particles) {
     const a = Math.max(0, pt.life / pt.max);

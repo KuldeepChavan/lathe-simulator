@@ -18,6 +18,7 @@ body {
   color: var(--text);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   min-height: 100vh;
+  -webkit-tap-highlight-color: transparent;
 }
 #root { min-height: 100vh; }
 .app { max-width: 1240px; margin: 0 auto; padding: 16px 18px 34px; }
@@ -33,7 +34,8 @@ h1 { margin: 0; font-size: 22px; letter-spacing: 0.01em; }
 .sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 660px; line-height: 1.45; }
 
 .layout { display: flex; gap: 14px; align-items: flex-start; }
-.stage { flex: 1 1 auto; min-width: 0; position: relative; }
+.stage { flex: 1 1 auto; min-width: 0; }
+.canvas-wrap { position: relative; }
 canvas.lathe {
   width: 100%;
   display: block;
@@ -44,6 +46,8 @@ canvas.lathe {
   box-shadow: 0 16px 44px rgba(0, 0, 0, 0.45);
   cursor: crosshair;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .target-chip {
   position: absolute;
@@ -65,6 +69,33 @@ canvas.lathe {
   display: flex;
   gap: 8px;
 }
+
+.cut-btn {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 3;
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 235, 200, 0.4);
+  background: radial-gradient(circle at 35% 30%, #f7c063, #d98a20);
+  color: #241703;
+  font-weight: 700;
+  font-size: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+.cut-btn:active { transform: scale(0.93); filter: brightness(1.12); }
+.cut-btn span { font-size: 11px; letter-spacing: 0.08em; }
 
 .legend {
   display: flex;
@@ -251,4 +282,18 @@ canvas.lathe {
   .layout { flex-direction: column; }
   .panel { flex: 1 1 auto; width: 100%; flex-direction: row; flex-wrap: wrap; }
   .panel .card { flex: 1 1 240px; }
+  .overlay-card .row { flex-wrap: wrap; }
+}
+@media (max-width: 640px) {
+  .app { padding: 10px 10px 24px; }
+  h1 { font-size: 18px; }
+  .sub { font-size: 12px; }
+  header { margin-bottom: 10px; }
+  header .btn.ghost { padding: 8px 10px; font-size: 11.5px; }
+  .panel { flex-direction: column; }
+  .panel .card { flex: 1 1 auto; }
+  .legend .keys { margin-left: 0; width: 100%; }
+  .shape-grid { grid-template-columns: repeat(3, 1fr); }
+  .rpm-val { min-width: 66px; font-size: 12px; }
+  .cut-btn { width: 70px; height: 70px; right: 10px; bottom: 10px; }
 }

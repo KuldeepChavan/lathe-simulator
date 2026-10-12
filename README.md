@@ -31,6 +31,8 @@ npm run build    # production build
 | ↑ ↓ | raise / lower the tool |
 | Hold SPACE | press the tool |
 | RPM slider | spindle speed (0 = spindle stop) |
+| **Touch**: drag on the wood | position + press the tool (tip aims above your finger) |
+| **Touch**: hold ✂ CUT button | press the tool (combine with a drag to feed) |
 
 ## Realism model
 

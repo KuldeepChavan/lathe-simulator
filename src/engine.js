@@ -37,6 +37,7 @@ export function createState(shapeId, rpm = 1200) {
     removedVol: 0,
     status: 'IDLE', match: 0, over: 0,
     done: false, polished: false, cracked: false, warnedThin: false, warnedLow: false,
+    touchPos: null,
     shake: 0, chatter: 0,
     msg: { text: '', until: 0 },
     events: [], particles: [],
