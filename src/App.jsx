@@ -33,9 +33,21 @@ export default function App() {
   const canvasRef = useRef(null);
   const stateRef = useRef(null);
   const keysRef = useRef(new Set());
-  const pointerRef = useRef(false);
+  const pointerRef = useRef({ down: false, id: null });
+  const btnRef = useRef(false);
   const soundRef = useRef(null);
   const prevDone = useRef(false);
+  const [coarse, setCoarse] = useState(
+    () => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches
+  );
+
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia('(pointer: coarse)');
+    const h = () => setCoarse(mq.matches);
+    if (mq.addEventListener) mq.addEventListener('change', h);
+    return () => { if (mq.removeEventListener) mq.removeEventListener('change', h); };
+  }, []);
 
   if (!stateRef.current) stateRef.current = createState('vase', 1200);
 
