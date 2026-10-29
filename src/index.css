@@ -32,6 +32,16 @@ header {
 }
 h1 { margin: 0; font-size: 22px; letter-spacing: 0.01em; }
 .sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 660px; line-height: 1.45; }
+.head-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.gallery-chip {
+  font-size: 11.5px;
+  color: var(--amber);
+  background: rgba(232, 163, 61, 0.08);
+  border: 1px solid rgba(232, 163, 61, 0.3);
+  padding: 4px 10px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
 
 .layout { display: flex; gap: 14px; align-items: flex-start; }
 .stage { flex: 1 1 auto; min-width: 0; }
@@ -68,6 +78,16 @@ canvas.lathe {
   z-index: 2;
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+.grade-chip {
+  font-size: 12px;
+  font-weight: 700;
+  color: #241703;
+  background: linear-gradient(135deg, #f7c063, #d98a20);
+  padding: 6px 12px;
+  border-radius: 99px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .cut-btn {
@@ -149,6 +169,32 @@ canvas.lathe {
 .shape-btn.active svg path { fill: var(--amber); }
 .thumb-emoji { font-size: 20px; line-height: 32px; }
 
+.species-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.species-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 3px 6px;
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.species-btn:hover { border-color: #57482f; }
+.species-btn.active { border-color: var(--amber); background: #33270f; }
+.species-btn small { color: var(--muted); font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+.swatch {
+  width: 34px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.15);
+}
+
 .tool-list { display: flex; flex-direction: column; gap: 7px; }
 .tool-btn {
   display: flex;
@@ -166,6 +212,22 @@ canvas.lathe {
 }
 .tool-btn small { color: var(--muted); font-size: 10.5px; }
 .tool-btn.active { border-color: var(--amber); background: #33270f; }
+
+.edge-wrap { margin-top: 10px; }
+.edge-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.edge-label small { color: var(--muted); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+.edge-label b { font-size: 12px; font-variant-numeric: tabular-nums; }
+.edge-bar { height: 7px; border-radius: 99px; background: #120e09; overflow: hidden; }
+.edge-bar > div { height: 100%; border-radius: 99px; transition: width 0.2s; }
+.edge-bar.ok > div { background: var(--green); }
+.edge-bar.warn > div { background: var(--orange); }
+.edge-bar.dull > div { background: var(--red); animation: pulse 0.6s infinite alternate; }
+.edge-wrap + .btn { margin-top: 8px; }
 
 .rpm-row { display: flex; align-items: center; gap: 10px; }
 .rpm-row input { flex: 1; accent-color: var(--amber); }
@@ -246,9 +308,45 @@ canvas.lathe {
 }
 .status.CUTTING { color: var(--orange); }
 .status.CHATTER { color: var(--red); animation: pulse 0.5s infinite alternate; }
+.status.SANDING { color: #d9c9a3; }
+.status.HONING { color: #9ecbff; }
+.status.OILING { color: #c9a06a; }
 .status.DONE, .status.DISPLAY { color: var(--green); }
 .status.CRACKED { color: var(--red); }
 @keyframes pulse { from { opacity: 0.55; } to { opacity: 1; } }
+
+.finish-block { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.surface-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.surface-row small {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  width: 48px;
+}
+.surface-row b { font-size: 11px; min-width: 44px; text-align: right; }
+.surface-bar { flex: 1; height: 8px; border-radius: 99px; background: #120e09; overflow: hidden; }
+.surface-bar > div { height: 100%; border-radius: 99px; transition: width 0.25s; }
+.surface-bar > div.rough { background: var(--red); }
+.surface-bar > div.bumpy { background: var(--orange); }
+.surface-bar > div.smooth { background: #d9c95c; }
+.surface-bar > div.glass { background: var(--green); }
+.grit-row { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.grit-label { color: var(--muted); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+.grit-btn {
+  flex: 1;
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 0;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.grit-btn.active { border-color: var(--amber); background: #33270f; color: var(--amber); }
+.oil-btn { width: 100%; margin-bottom: 8px; }
+.display-btn { width: 100%; }
 
 .overlay {
   position: absolute;
@@ -261,11 +359,12 @@ canvas.lathe {
   align-items: center;
   justify-content: center;
 }
-.overlay-card { text-align: center; max-width: 360px; width: calc(100% - 60px); }
+.overlay-card { text-align: center; max-width: 380px; width: calc(100% - 60px); }
 .overlay-card .big { font-size: 44px; }
 .overlay-card h2 { margin: 6px 0 4px; font-size: 20px; }
-.overlay-card p { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
-.overlay-card .row { display: flex; gap: 7px; margin-bottom: 8px; }
+.overlay-card p { color: var(--muted); font-size: 12.5px; margin: 0 0 8px; }
+.overlay-card .sub2 { font-size: 11.5px; }
+.overlay-card .row { display: flex; gap: 7px; margin-bottom: 8px; flex-wrap: wrap; }
 .linklike {
   background: none;
   border: none;
@@ -290,6 +389,7 @@ canvas.lathe {
   .sub { font-size: 12px; }
   header { margin-bottom: 10px; }
   header .btn.ghost { padding: 8px 10px; font-size: 11.5px; }
+  .head-actions { align-items: flex-end; }
   .panel { flex-direction: column; }
   .panel .card { flex: 1 1 auto; }
   .legend .keys { margin-left: 0; width: 100%; }

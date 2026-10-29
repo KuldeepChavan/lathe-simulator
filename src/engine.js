@@ -1,11 +1,20 @@
 import { N, X0, X1, AXIS_Y, R0, CLAMP, DX, BX, clamp, H } from './geom.js';
 import { sampleTarget, makeBlank } from './shapes.js';
+import { SPECIES } from './species.js';
 
 export const TOOLS = {
-  gouge:     { name: 'Gouge',        w: 30, safe: 20, desc: 'Wide & fast — hollows and general shaping', edge: (u) => Math.max(0, 1 - u * u) },
-  skew:      { name: 'Skew Chisel',  w: 14, safe: 12, desc: 'Fine, precise cuts for small details',     edge: (u) => Math.max(0, 1 - Math.abs(u)) },
-  parting:   { name: 'Parting Tool', w: 7,  safe: 34, desc: 'Thin walls, beads and deep grooves',        edge: (u) => (Math.abs(u) < 0.85 ? 1 : 0) },
+  gouge:     { name: 'Gouge',        w: 30, safe: 20, scratch: 10, desc: 'Wide & fast — hollows and general shaping', edge: (u) => Math.max(0, 1 - u * u) },
+  skew:      { name: 'Skew Chisel',  w: 14, safe: 12, scratch: 6,  desc: 'Fine, precise cuts for small details',     edge: (u) => Math.max(0, 1 - Math.abs(u)) },
+  parting:   { name: 'Parting Tool', w: 7,  safe: 34, scratch: 8,  desc: 'Thin walls, beads and deep grooves',        edge: (u) => (Math.abs(u) < 0.85 ? 1 : 0) },
 };
+
+export const GRITS = [
+  { id: 80,  label: '80',  floor: 18,  smooth: 1.0 },
+  { id: 120, label: '120', floor: 6,   smooth: 0.8 },
+  { id: 220, label: '220', floor: 3,   smooth: 0.6 },
+  { id: 400, label: '400', floor: 1.5, smooth: 0.4 },
+];
+const gritById = (g) => GRITS.find((x) => x.id === g) || GRITS[0];
 
 const xToI = (x) => ((x - X0) / (X1 - X0)) * (N - 1);
 
@@ -13,7 +22,7 @@ function makeGrain() {
   const g = [];
   for (let i = 0; i < 46; i++) {
     g.push({
-      a: Math.random() * Math.PI * 2,          // surface angle on the cylinder
+      a: Math.random() * Math.PI * 2,
       c1: Math.random() * 6, c2: Math.random() * 6,
       amp1: 0.05 + Math.random() * 0.14,
       amp2: 0.03 + Math.random() * 0.1,
@@ -32,16 +41,24 @@ export function createState(shapeId, rpm = 1200) {
   for (let i = 0; i < N; i++) initialVol += Math.PI * profile[i] * profile[i] * DX;
   return {
     profile, tgt, shapeId, initialVol,
+    speciesId: 'beech',
     rpm, phase: 0, t: 0,
     tool: { type: 'gouge', x: 380, r: R0 + 18, engaged: false, auto: false, dir: 1, prevX: 380 },
     removedVol: 0,
     status: 'IDLE', match: 0, over: 0,
-    done: false, polished: false, cracked: false, warnedThin: false, warnedLow: false,
+    done: false, displayed: false, oiled: false,
+    cracked: false, warnedThin: false, warnedLow: false, warnedDull: false,
+    edge: 1, honing: 0,
+    scorches: [],
+    finish: { grit: 80, scratch: 20, oiling: 0, sanding: false, autoSand: false, sandPasses: 0, roughness: 40, trendBase: null },
+    sandBudget: new Float32Array(N).fill(3),
+    grade: null,
     touchPos: null,
     shake: 0, chatter: 0,
     msg: { text: '', until: 0 },
     events: [], particles: [],
     grain: makeGrain(),
+    lastScorchToast: 0,
   };
 }
 
@@ -82,11 +99,51 @@ function doTear(s, i0, i1) {
   spawn(s, BX(ic), AXIS_Y - s.profile[ic], 26, 1.6);
 }
 
+// box blur around index i
+function smoothAt(p, i, k = 3) {
+  let sum = 0, n = 0;
+  for (let j = i - k; j <= i + k; j++) {
+    if (j < 0 || j >= p.length) continue;
+    sum += p[j]; n++;
+  }
+  return sum / n;
+}
+
+function computeRoughness(s) {
+  let hf = 0, cnt = 0;
+  for (let i = CLAMP; i < N - CLAMP; i++) {
+    hf += Math.abs(s.profile[i] - smoothAt(s.profile, i, 3));
+    cnt++;
+  }
+  hf /= cnt;
+  const scorch = s.scorches.reduce((a, x) => a + x.i, 0);
+  return clamp(hf * 16 + scorch * 5 + s.finish.scratch, 0, 100);
+}
+
+export function gradeTurning(s) {
+  const m = s.match;
+  const oPen = clamp(s.over * 30, 0, 100);
+  const crackPen = s.cracked ? 25 : 0;
+  const r = s.finish.roughness;
+  const t = s.t;
+  const time = t < 60 ? 100 : t < 120 ? 78 : t < 240 ? 55 : 35;
+  const score = clamp(m * 0.45 + (100 - oPen) * 0.15 + (100 - r) * 0.25 + time * 0.15 - crackPen * 0.3, 0, 100);
+  const letter = score >= 92 ? 'S' : score >= 84 ? 'A' : score >= 74 ? 'B' : score >= 60 ? 'C' : 'D';
+  return { letter, score: Math.round(score) };
+}
+
 export function step(s, dt, keys = new Set()) {
   dt = Math.min(dt, 0.05);
   s.t += dt;
   s.shake *= Math.max(0, 1 - 5 * dt);
   s.phase += (Math.PI * 2 * s.rpm / 60) * dt;
+
+  const spec = SPECIES[s.speciesId];
+  const d = spec.density;
+  const cutRateFactor = 1.32 - d * 0.42;
+  const chatterThresh = 460 + d * 440;
+  const safeFactor = 1.25 - d * 0.35;
+  const wearFactor = 0.55 + d * 0.9;
 
   // ---- keyboard movement ----
   const kx = 300 * dt, kr = 240 * dt;
@@ -96,6 +153,16 @@ export function step(s, dt, keys = new Set()) {
   if (keys.has('ArrowDown')) s.tool.r -= kr;
   s.tool.x = clamp(s.tool.x, X0 + 8, X1 - 8);
   s.tool.r = clamp(s.tool.r, 0, 132);
+
+  // ---- honing ----
+  if (s.honing > 0) {
+    s.honing += dt / 1.4;
+    if (s.honing >= 1) {
+      s.honing = 0;
+      s.edge = 1;
+      s.warnedDull = false;
+    }
+  }
 
   // ---- auto-turn (demo) ----
   if (s.tool.auto && !s.done) {
@@ -107,33 +174,38 @@ export function step(s, dt, keys = new Set()) {
   }
 
   // ---- low RPM warning ----
-  if (s.tool.engaged && s.rpm < 420 && s.rpm >= 40 && !s.warnedLow && !s.done) {
+  if (s.tool.engaged && s.rpm >= 40 && s.rpm < chatterThresh - 280 && !s.warnedLow && !s.done && s.honing === 0) {
     s.warnedLow = true;
-    toast(s, 'Below ~420 RPM the tool starts to chatter — raise the speed.');
+    toast(s, `Below ~${Math.round(chatterThresh - 280)} RPM ${spec.name.toLowerCase()} starts to chatter — raise the speed.`);
   }
-  if (s.rpm >= 500) s.warnedLow = false;
+  if (s.rpm >= chatterThresh + 80) s.warnedLow = false;
 
-  // ---- cutting ----
+  // ---- cutting (only before the piece is completed) ----
   let cutting = false, cutVolFrame = 0, maxD = 0;
-  if (s.tool.engaged && s.rpm >= 40 && !s.done) {
+  const auto = s.tool.auto;
+  if (s.tool.engaged && s.rpm >= 40 && !s.done && s.honing === 0) {
     const tool = TOOLS[s.tool.type];
     const half = tool.w / 2;
     const i0 = Math.max(CLAMP, Math.floor(xToI(s.tool.x - half)));
     const i1 = Math.min(N - 1 - CLAMP, Math.ceil(xToI(s.tool.x + half)));
     if (i1 > i0) {
-      for (let i = i0; i <= i1; i++) {
-        const d = s.profile[i] - s.tool.r;
-        if (d > maxD) maxD = d;
+      if (!auto) {
+        for (let i = i0; i <= i1; i++) {
+          const dd = s.profile[i] - s.tool.r;
+          if (dd > maxD) maxD = dd;
+        }
       }
-      const rate = (10 + s.rpm * 0.022) * dt; // max material removal this frame
+      const rate = (10 + s.rpm * 0.022) * dt * cutRateFactor * (auto ? 2.5 : 1);
       const feed = Math.abs(s.tool.x - s.tool.prevX) / Math.max(dt, 1e-4);
       for (let i = i0; i <= i1; i++) {
-        const u = Math.abs(BX(i) - s.tool.x) / half;
-        const e = tool.edge(u);
+        // auto mode: machine-follow each sample toward its own local target,
+        // so a rigid tool radius can never overcut a steep shoulder
+        const e = auto ? 1 : tool.edge((Math.abs(BX(i) - s.tool.x) / half));
         if (e <= 0) continue;
-        const d = s.profile[i] - s.tool.r;
-        if (d > 0.02) {
-          const rem = Math.min(d, rate * e * (1 + feed / 520));
+        const refR = auto && s.tgt ? s.tgt[i] + 0.5 : s.tool.r;
+        const dd = s.profile[i] - refR;
+        if (dd > 0.02) {
+          const rem = Math.min(dd, rate * e * (1 + feed / 520));
           if (rem > 0.001) {
             const r0 = s.profile[i];
             s.removedVol += Math.PI * (r0 * r0 - (r0 - rem) * (r0 - rem)) * DX;
@@ -144,17 +216,37 @@ export function step(s, dt, keys = new Set()) {
         }
       }
       if (cutting) {
-        spawn(s, s.tool.x, AXIS_Y - s.profile[Math.round(xToI(s.tool.x))],
-          Math.min(16, 2 + cutVolFrame * 0.9), 1);
+        spawn(s, s.tool.x, AXIS_Y - s.profile[Math.round(xToI(s.tool.x))], Math.min(16, 2 + cutVolFrame * 0.9), 1);
+        if (!auto) {
+          // edge wear (the demo pass is a clean machine cut)
+          s.edge = Math.max(0, s.edge - cutVolFrame * 0.00016 * wearFactor * (s.edge < 0.45 ? 1.6 : 1));
+          if (s.edge < 0.5 && !s.warnedDull) {
+            s.warnedDull = true;
+            toast(s, 'The edge is getting dull — press H to hone it.');
+          }
+          // scorch from a dull edge
+          if (s.edge < 0.45) {
+            const p = (0.45 - s.edge) * 2.2 * dt * 3;
+            if (Math.random() < p) {
+              s.scorches.push({ t: (s.tool.x - X0) / (X1 - X0), i: 0.5 + Math.random() * 0.5 });
+              s.events.push({ type: 'scorch' });
+              if (s.t - s.lastScorchToast > 5) {
+                s.lastScorchToast = s.t;
+                toast(s, 'Burnt! Dull edge is scorching the wood — hone it (H).', 3);
+              }
+            }
+          }
+        }
       }
-      // tear-out: too deep a cut at too low a speed
-      if (maxD > tool.safe && s.rpm < 1700) {
-        const p = Math.min(0.9, ((maxD - tool.safe) / 24) * (1500 / s.rpm) * dt * 3.2);
+      // tear-out: too deep a cut at too low a speed (manual passes only)
+      const safe = tool.safe * safeFactor;
+      if (!auto && maxD > safe && s.rpm < 1700) {
+        const p = Math.min(0.9, ((maxD - safe) / 24) * (1500 / s.rpm) * dt * 3.2);
         if (Math.random() < p) doTear(s, i0, i1);
       }
       // chatter: low speed + cutting -> scalloped marks
-      if (s.rpm < 700) {
-        s.chatter = Math.min(1, s.chatter + dt * 2.6);
+      if (s.rpm < chatterThresh) {
+        s.chatter = Math.min(1, s.chatter + dt * 2.6 * (s.edge < 0.45 ? 1.4 : 1));
         for (let i = i0; i <= i1; i++) {
           const wv = Math.max(0, Math.sin(BX(i) * 0.09 + s.t * 46));
           s.profile[i] = Math.max(1, s.profile[i] - wv * s.chatter * 26 * dt);
@@ -162,8 +254,65 @@ export function step(s, dt, keys = new Set()) {
       }
     }
   }
-  s.chatter = Math.max(0, s.chatter - ((cutting && s.rpm < 700) ? 0 : dt * 2.2));
+  s.chatter = Math.max(0, s.chatter - ((cutting && s.rpm < chatterThresh) ? 0 : dt * 2.2));
   s.tool.prevX = s.tool.x;
+
+  // ---- sanding (finishing stage) ----
+  let sanding = false;
+  if (s.done && s.finish.sanding) {
+    // auto-sand drives the tool across the piece
+    if (s.finish.autoSand) {
+      s.tool.x += s.tool.dir * 220 * dt;
+      if (s.tool.x > X1 - 16) { s.tool.x = X1 - 16; s.tool.dir = -1; s.finish.sandPasses++; }
+      if (s.tool.x < X0 + 16) { s.tool.x = X0 + 16; s.tool.dir = 1; s.finish.sandPasses++; }
+      if (s.finish.sandPasses >= 4) { s.finish.autoSand = false; }
+    }
+    if (s.tool.engaged) {
+      const grit = gritById(s.finish.grit);
+      // freeze the shape the player achieved: shallow low-pass of the current
+      // profile (small enough to follow tight fillets, blind to chatter ripples)
+      if (!s.finish.trendBase) {
+        const b = new Float32Array(N);
+        for (let i = 0; i < N; i++) b[i] = smoothAt(s.profile, i, 2);
+        s.finish.trendBase = b;
+      }
+      const i0 = Math.max(CLAMP, Math.floor(xToI(s.tool.x - 24)));
+      const i1 = Math.min(N - 1 - CLAMP, Math.ceil(xToI(s.tool.x + 24)));
+      let sanded = 0;
+      for (let i = i0; i <= i1; i++) {
+        // relax the surface toward the frozen shape: removes chatter/scallops,
+        // never distorts the curve
+        const diff = s.finish.trendBase[i] - s.profile[i];
+        const take = Math.min(Math.abs(diff) * 0.55 * grit.smooth, s.sandBudget[i]);
+        if (take > 0.002) {
+          s.profile[i] += diff * (take / Math.abs(diff));
+          s.sandBudget[i] -= take;
+          sanded += take;
+        }
+      }
+      for (const sc of s.scorches) {
+        const scx = X0 + sc.t * (X1 - X0);
+        if (Math.abs(scx - s.tool.x) < 30) sc.i = Math.max(0, sc.i - dt * 2.2 * grit.smooth);
+      }
+      s.scorches = s.scorches.filter((x) => x.i > 0.03);
+      if (s.finish.scratch > grit.floor) {
+        s.finish.scratch = Math.max(grit.floor, s.finish.scratch - dt * 4);
+      }
+      if (sanded > 0.05) {
+        spawn(s, s.tool.x, AXIS_Y - s.profile[Math.round(xToI(s.tool.x))], Math.min(10, 2 + sanded * 2), 0.6);
+        sanding = true;
+      }
+    }
+  }
+
+  // ---- oiling ----
+  if (s.finish.oiling > 0 && s.finish.oiling < 1) {
+    s.finish.oiling += dt / 2.5;
+    if (s.finish.oiling >= 1) {
+      s.finish.oiling = 1;
+      s.oiled = true;
+    }
+  }
 
   // ---- wall & match ----
   let minWall = 1e9, errSum = 0, nPts = 0, over = 0;
@@ -184,6 +333,7 @@ export function step(s, dt, keys = new Set()) {
   } else {
     s.match = 0; s.over = 0;
   }
+  s.finish.roughness = computeRoughness(s);
 
   if (minWall < 15 && !s.warnedThin) {
     s.warnedThin = true;
@@ -201,15 +351,19 @@ export function step(s, dt, keys = new Set()) {
   if (!s.done && s.tgt && s.match >= 96.5 && s.over < 2 && s.t > 4) {
     s.done = true;
     s.tool.auto = false;
+    s.finish.scratch = TOOLS[s.tool.type].scratch;
     s.events.push({ type: 'done' });
-    toast(s, 'Turning complete — nice work!', 4);
+    toast(s, 'Turning complete — now sand & oil it!', 4);
   }
 
-  s.status = s.done
-    ? (s.polished ? 'DISPLAY' : 'DONE')
-    : cutting
-      ? (s.chatter > 0.3 ? 'CHATTER' : 'CUTTING')
-      : s.cracked ? 'CRACKED' : 'IDLE';
+  // ---- status ----
+  if (s.displayed) s.status = 'DISPLAY';
+  else if (s.honing > 0) s.status = 'HONING';
+  else if (s.done && s.finish.oiling > 0 && s.finish.oiling < 1) s.status = 'OILING';
+  else if (s.done && sanding) s.status = 'SANDING';
+  else if (s.done) s.status = 'DONE';
+  else if (cutting) s.status = s.chatter > 0.3 ? 'CHATTER' : 'CUTTING';
+  else s.status = s.cracked ? 'CRACKED' : 'IDLE';
 
   // ---- particles ----
   for (const p of s.particles) {
